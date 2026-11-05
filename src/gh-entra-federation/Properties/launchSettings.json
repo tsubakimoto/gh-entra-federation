@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "gh-entra-federation": {
+      "commandName": "Project",
+      "commandLineArgs": "setup --repo tsubakimoto/potential-robot --environment production --app-name github-production"
+    }
+  }
+}

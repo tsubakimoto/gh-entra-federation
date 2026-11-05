@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: '0.1.0'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            rid: win-x64
+            asset: gh-entra-federation-windows-amd64.exe
+          - runner: windows-11-arm
+            rid: win-arm64
+            asset: gh-entra-federation-windows-arm64.exe
+          - runner: ubuntu-latest
+            rid: linux-x64
+            asset: gh-entra-federation-linux-amd64
+          - runner: ubuntu-24.04-arm
+            rid: linux-arm64
+            asset: gh-entra-federation-linux-arm64
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      RELEASE_VERSION: ${{ inputs.version || '0.1.0' }}
+      TARGET_RID: ${{ matrix.rid }}
+      ASSET_NAME: ${{ matrix.asset }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - name: Build and test (no cloud access)
+        run: |
+          $tests = Join-Path 'tests' 'gh-entra-federation.Tests' 'gh-entra-federation.Tests.csproj'
+          dotnet test $tests --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish self-contained extension
+        run: |
+          $project = Join-Path 'src' 'gh-entra-federation' 'gh-entra-federation.csproj'
+          dotnet publish $project --configuration Release --runtime $env:TARGET_RID --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:Version=$env:RELEASE_VERSION -p:DebugType=None -p:DebugSymbols=false --output publish
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path assets | Out-Null
+          $executable = if ($IsWindows) { 'gh-entra-federation.exe' } else { 'gh-entra-federation' }
+          Copy-Item (Join-Path 'publish' $executable) (Join-Path 'assets' $env:ASSET_NAME)
+      - name: Native executable smoke checks
+        run: |
+          $binary = Join-Path $PWD 'assets' $env:ASSET_NAME
+          if (-not $IsWindows) { chmod +x $binary }
+          & $binary --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = & $binary --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($version -ne $env:RELEASE_VERSION) { throw "Unexpected executable version: $version" }
+          Write-Output $version
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: assets/*
+          if-no-files-found: error
+          retention-days: 7

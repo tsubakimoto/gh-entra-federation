@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/gh-entra-federation/gh-entra-federation.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/gh-entra-federation.Tests/gh-entra-federation.Tests.csproj" />
+  </Folder>
+</Solution>
